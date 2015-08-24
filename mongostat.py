@@ -4,9 +4,49 @@ import argparse
 from pymongo import MongoClient
 from pymongo.errors import OperationFailure
 from pymongo.errors import ConnectionFailure
+from pymongo.errors import ServerSelectionTimeoutError
 
 # Version number
 PYTHON_MONGOSTAT_VERSION = "0.0.1"
+
+class MongoInstance():
+    'Class for mongodb instance'
+
+    def __init__(self, host, port, username, password):
+        'Initialize the mongodb instance information and create connection to it.'
+
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.stats_info = {}
+        try:
+            self.connection = MongoClient(self.host, self.port)
+        except ConnectionFailure:
+            print "Connection error: create connection to mongodb instance %s:%s failed." % (self.host, str(self.port))
+            exit(1)
+
+    def try_stats_command(self):
+        'Try to execute the serverStatus command to see if authentication required.'
+        
+        # Execute the serverStatus command at first and handle possible exceptions
+        errmsg = {}
+        try:
+            admin = self.connection.admin
+            server_status = admin.command({"serverStatus":1})
+        except OperationFailure, op_failure:
+            errmsg = op_failure.details
+        except ServerSelectionTimeoutError:
+            print "Timeout error: get server status of mongodb instance %s:%s timeout." % (self.host, str(self.port))
+            exit(1)
+        except:
+            print "Execution error: get server status of mongodb instance %s:%s failed." % (self.host, str(self.port))
+            exit(1)
+
+        # Check to see if the mongodb server enables authentication
+        # if errmsg != {} and errmsg['errmsg'] == "unauthorized":
+        #    admin.authenticate(self.username, self.password)
+
 
 def mongostat_arg_check(args):
     'Check the given arguments to make sure they are valid.'
@@ -37,14 +77,12 @@ def mongostat_arg_check(args):
     return True, None
 
 def mongostat_start(host, port, username, password, rowcount, noheaders, json):
-    # Print for test
-    print "Hostname: %s" % host
-    print "Port: %s" % str(port)
-    print "Username: %s" % username
-    print "Password: %s" % password
-    print "Rowcount: %s" % rowcount
-    print "Noheaders: %s" % str(noheaders)
-    print "Json: %s" % str(json)
+    'Start monitor the mongodb server status and output stats one time per second.'
+
+    # Create mongodb instance and make sure we can execute the serverStatus command correctly
+    mongo_instance = MongoInstance(host, port, username, password)
+    mongo_instance.try_stats_command()
+
 
 if __name__ == '__main__':
     # Default configurations
