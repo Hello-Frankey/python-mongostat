@@ -9,6 +9,13 @@ from pymongo.errors import ServerSelectionTimeoutError
 # Version number
 PYTHON_MONGOSTAT_VERSION = "0.0.1"
 
+# Not authorized error
+MONGO2_NOT_AUTH = "unauthorized"
+MONGO3_NOT_AUTH = "not authorized"
+
+# Auth
+MONGO3_AUTH_FAILUR = "Authentication failed"
+
 class MongoInstance():
     'Class for mongodb instance'
 
@@ -20,11 +27,21 @@ class MongoInstance():
         self.username = username
         self.password = password
         self.stats_info = {}
+
+        # Create connection to mongodb server
         try:
             self.connection = MongoClient(self.host, self.port)
         except ConnectionFailure:
-            print "Connection error: create connection to mongodb instance %s:%s failed." % (self.host, str(self.port))
+            print "Connection error: create connection to mongodb instance failed."
             exit(1)
+
+        # Get the mongodb version
+        try:
+            server_info = self.connection.server_info()
+            self.version = server_info['version']
+        except ServerSelectionTimeoutError:
+            print "Timeout error: get server information of mongodb instance timeout."
+
 
     def try_stats_command(self):
         'Try to execute the serverStatus command to see if authentication required.'
@@ -36,16 +53,21 @@ class MongoInstance():
             server_status = admin.command({"serverStatus":1})
         except OperationFailure, op_failure:
             errmsg = op_failure.details
-        except ServerSelectionTimeoutError:
-            print "Timeout error: get server status of mongodb instance %s:%s timeout." % (self.host, str(self.port))
-            exit(1)
         except:
-            print "Execution error: get server status of mongodb instance %s:%s failed." % (self.host, str(self.port))
+            print "Execution error: get server status of mongodb instance failed."
             exit(1)
 
         # Check to see if the mongodb server enables authentication
-        # if errmsg != {} and errmsg['errmsg'] == "unauthorized":
-        #    admin.authenticate(self.username, self.password)
+        if errmsg != {}:
+            if errmsg['errmsg'].find(MONGO2_NOT_AUTH) == 0 or errmsg['errmsg'].find(MONGO3_NOT_AUTH) == 0:
+                try:
+                    admin.authenticate(self.username, self.password)
+                except OperationFailure, op_failure:
+                    print "Execution error: authenticate to mongodb instance failed."
+                    exit(1)
+            else:
+                print "Execution error: %s." % errmsg['errmsg']
+                exit(1)
 
 
 def mongostat_arg_check(args):
