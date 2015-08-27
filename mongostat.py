@@ -13,7 +13,7 @@ PYTHON_MONGOSTAT_VERSION = "0.0.1"
 MONGO2_NOT_AUTH = "unauthorized"
 MONGO3_NOT_AUTH = "not authorized"
 
-# Auth
+# Authentication failure message
 MONGO3_AUTH_FAILUR = "Authentication failed"
 
 class MongoInstance():
@@ -42,14 +42,16 @@ class MongoInstance():
         except ServerSelectionTimeoutError:
             print "Timeout error: get server information of mongodb instance timeout."
 
+        return
+
 
     def try_stats_command(self):
         'Try to execute the serverStatus command to see if authentication required.'
         
         # Execute the serverStatus command at first and handle possible exceptions
-        errmsg = {}
+        errmsg = server_status = {}
+        admin = self.connection.admin
         try:
-            admin = self.connection.admin
             server_status = admin.command({"serverStatus":1})
         except OperationFailure, op_failure:
             errmsg = op_failure.details
@@ -59,15 +61,28 @@ class MongoInstance():
 
         # Check to see if the mongodb server enables authentication
         if errmsg != {}:
-            if errmsg['errmsg'].find(MONGO2_NOT_AUTH) == 0 or errmsg['errmsg'].find(MONGO3_NOT_AUTH) == 0:
+            if errmsg['errmsg'].find(MONGO2_NOT_AUTH) == -1 and errmsg['errmsg'].find(MONGO3_NOT_AUTH) == -1:
+                print "Execution error: %s." % errmsg['errmsg']
+                exit(1)
+            else:
+                # Authenticate with the given username and password
                 try:
                     admin.authenticate(self.username, self.password)
                 except OperationFailure, op_failure:
                     print "Execution error: authenticate to mongodb instance failed."
                     exit(1)
-            else:
-                print "Execution error: %s." % errmsg['errmsg']
-                exit(1)
+                # Try to execute the serverStatus command again
+                try:
+                    server_status = admin.command({"serverStatus":1})
+                except OperationFailure, op_failure:
+                    print "Execution error: %s." % op_failure.details['errmsg']
+                    exit(1)
+        
+        # Set the mongodb storage engine type if mongodb version is 3.0 or later
+        if self.version >= "3.0":
+            self.storage_engine = server_status['storageEngine']['name']
+
+        return
 
 
 def mongostat_arg_check(args):
@@ -104,7 +119,7 @@ def mongostat_start(host, port, username, password, rowcount, noheaders, json):
     # Create mongodb instance and make sure we can execute the serverStatus command correctly
     mongo_instance = MongoInstance(host, port, username, password)
     mongo_instance.try_stats_command()
-
+    # print mongo_instance.host, mongo_instance.port, mongo_instance.version, mongo_instance.storage_engine
 
 if __name__ == '__main__':
     # Default configurations
